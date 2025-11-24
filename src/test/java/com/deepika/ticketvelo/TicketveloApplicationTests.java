@@ -1,0 +1,13 @@
+package com.deepika.ticketvelo;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class TicketveloApplicationTests {
+
+	@Test
+	void contextLoads() {
+	}
+
+}
