@@ -1,185 +1,90 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, MapPin, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+import { Calendar, MapPin, ArrowRight, Zap } from 'lucide-react';
 
-// --- TYPES ---
-type Seat = { id: number; rowNumber: string; seatNumber: number; section: string };
-type Ticket = { id: number; status: string; seat: Seat };
+type Event = {
+  id: number;
+  title: string;
+  date: string;
+  venue: { name: string; address: string; capacity: number };
+};
 
-export default function BookingPage() {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [selectedSeatId, setSelectedSeatId] = useState<number | null>(null);
-  const [bookingStatus, setBookingStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState('');
-  
-  // --- FIX STARTS HERE ---
-  // 1. Initialize with a static value (0) to match server and client initially
-  const [userId, setUserId] = useState<number>(0);
-
-  // 2. Generate the random ID only once the browser has loaded (useEffect)
-  useEffect(() => {
-    setUserId(Math.floor(Math.random() * 10000));
-  }, []);
-  // --- FIX ENDS HERE ---
-
-  const EVENT_ID = 1;
+export default function HomePage() {
+  const [events, setEvents] = useState<Event[]>([]);
 
   useEffect(() => {
-    fetchTickets();
+    fetch('http://localhost:8080/api/catalog/events')
+      .then(res => res.json())
+      .then(data => setEvents(data))
+      .catch(err => console.error("Failed to fetch events", err));
   }, []);
 
-  const fetchTickets = async () => {
-    try {
-      const res = await fetch(`http://localhost:8080/api/bookings/event/${EVENT_ID}`);
-      const data = await res.json();
-      const sortedData = data.sort((a: Ticket, b: Ticket) => a.seat.id - b.seat.id);
-      setTickets(sortedData);
-    } catch (err) {
-      console.error("Failed to connect to Java Backend:", err);
-    }
-  };
-
-  const handleBook = async () => {
-    if (!selectedSeatId) return;
-    setBookingStatus('loading');
-    setErrorMessage('');
-    
-    try {
-      const response = await fetch('http://localhost:8080/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId: EVENT_ID,
-          seatId: selectedSeatId,
-          userId: userId // Use the state variable here
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Seat already taken!');
-      }
-
-      setBookingStatus('success');
-      fetchTickets(); 
-    } catch (err) {
-      setBookingStatus('error');
-      setErrorMessage('Booking Failed: Someone took this seat!');
-    }
-  };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-violet-500 selection:text-white">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-violet-500 selection:text-white">
       
-      {/* Header */}
-      <header className="bg-slate-950 border-b border-slate-800 p-6 shadow-2xl">
-        <div className="max-w-4xl mx-auto flex justify-between items-center">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
-            TicketVelo
+      {/* Hero Section */}
+      <div className="relative border-b border-slate-800 bg-[url('https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center">
+        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"></div>
+        <div className="relative max-w-6xl mx-auto px-6 py-24">
+          <div className="inline-flex items-center gap-2 text-violet-400 border border-violet-500/30 bg-violet-500/10 px-3 py-1 rounded-full text-xs font-medium mb-6">
+            <Zap size={14} /> 
+            <span>Live High-Concurrency Demo</span>
+          </div>
+          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 tracking-tight">
+            Secure your seat <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400">
+              before it's gone.
+            </span>
           </h1>
-          <div className="text-right hidden md:block text-xs text-slate-500">
-             {/* Only show User ID if it's generated, otherwise 'Loading...' */}
-             User ID: {userId > 0 ? userId : '...'}
-          </div>
+          <p className="text-xl text-slate-400 max-w-2xl leading-relaxed">
+            Experience the next generation of ticketing. Powered by Redis distributed locking and Apache Kafka for ultra-low latency booking.
+          </p>
         </div>
-      </header>
+      </div>
 
-      <main className="max-w-4xl mx-auto p-6 mt-8 grid md:grid-cols-3 gap-8">
+      {/* Events Grid */}
+      <main className="max-w-6xl mx-auto px-6 py-16">
+        <h2 className="text-2xl font-bold text-white mb-8">Upcoming Events</h2>
         
-        {/* Event Info */}
-        <div className="md:col-span-1 space-y-6">
-          <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 backdrop-blur-sm">
-            <h2 className="text-xl font-semibold text-white mb-4">Event Details</h2>
-            <div className="space-y-4">
-              <div>
-                <div className="text-slate-400 text-xs uppercase tracking-wider mb-1">Artist</div>
-                <div className="text-lg font-medium text-violet-200">Java Concurrency Masterclass</div>
-              </div>
-              <div className="flex gap-3 items-center">
-                 <MapPin className="text-slate-500" size={18} />
-                 <span className="text-sm">Madison Square Garden</span>
-              </div>
-            </div>
-          </div>
-          
-          {/* Legend */}
-          <div className="grid grid-cols-2 gap-3 text-xs text-slate-400">
-             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-emerald-500"></div> Available</div>
-             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-slate-700"></div> Booked</div>
-             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-violet-500"></div> Selected</div>
-          </div>
-        </div>
-
-        {/* Seat Map */}
-        <div className="md:col-span-2">
-          
-          {/* Stage */}
-          <div className="w-full h-8 bg-gradient-to-b from-violet-600/20 to-transparent border-t-2 border-violet-600 rounded-t-full mb-8 flex items-center justify-center">
-            <span className="text-violet-400 text-[10px] tracking-[0.3em] uppercase">Stage</span>
-          </div>
-
-          {/* The Real Grid */}
-          <div className="grid grid-cols-10 gap-2 mx-auto w-fit">
-            {tickets.map((ticket) => {
-                const isBooked = ticket.status === 'BOOKED';
-                const isSelected = selectedSeatId === ticket.seat.id;
-
-                return (
-                    <button
-                        key={ticket.id}
-                        disabled={isBooked}
-                        onClick={() => {
-                            setSelectedSeatId(ticket.seat.id);
-                            setBookingStatus('idle'); 
-                        }}
-                        className={`
-                            w-8 h-8 rounded-sm text-[10px] font-medium transition-all duration-200 relative
-                            ${isBooked 
-                                ? 'bg-slate-800 text-slate-600 cursor-not-allowed' 
-                                : isSelected 
-                                    ? 'bg-violet-600 text-white shadow-lg scale-110 z-10' 
-                                    : 'bg-emerald-500/80 hover:bg-emerald-400 text-emerald-900'
-                            }
-                        `}
-                    >
-                        {isBooked ? 'X' : ticket.seat.seatNumber}
-                    </button>
-                );
-            })}
-          </div>
-
-          {/* Checkout Button */}
-          <div className="mt-8 flex flex-col items-center gap-4">
-            
-            {bookingStatus === 'error' && (
-                <div className="flex items-center gap-2 text-red-400 bg-red-900/20 px-4 py-2 rounded-lg text-sm border border-red-900/50">
-                    <AlertCircle size={16} /> {errorMessage}
-                </div>
-            )}
-
-            <button
-                onClick={handleBook}
-                disabled={!selectedSeatId || bookingStatus === 'loading' || bookingStatus === 'success'}
-                className={`
-                    px-8 py-3 rounded-full font-bold text-sm tracking-wide transition-all duration-300 flex items-center gap-2
-                    ${!selectedSeatId 
-                        ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
-                        : bookingStatus === 'success'
-                            ? 'bg-emerald-500 text-slate-900 ring-4 ring-emerald-500/20'
-                            : 'bg-white text-slate-900 hover:bg-violet-50 hover:scale-105 shadow-xl'
-                    }
-                `}
-            >
-                {bookingStatus === 'loading' && <span className="animate-spin">⏳</span>}
-                {bookingStatus === 'success' && <CheckCircle size={18} />}
+        {events.length === 0 ? (
+           <div className="text-slate-500">Loading events or no events found...</div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {events.map((event) => (
+              <div key={event.id} className="group relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-violet-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-violet-500/10">
                 
-                {bookingStatus === 'idle' && 'CONFIRM TICKET'}
-                {bookingStatus === 'loading' && 'PROCESSING...'}
-                {bookingStatus === 'success' && 'BOOKED!'}
-            </button>
-          </div>
+                {/* Card Header */}
+                <div className={`h-32 w-full bg-gradient-to-br ${event.id % 2 === 0 ? 'from-blue-600 to-violet-600' : 'from-fuchsia-600 to-pink-600'} opacity-80 group-hover:opacity-100 transition-opacity`}></div>
+                
+                <div className="p-6">
+                  <div className="text-xs font-medium text-violet-400 mb-2 uppercase tracking-wider">Concert</div>
+                  <h3 className="text-xl font-bold text-white mb-2 group-hover:text-violet-200 transition-colors">{event.title}</h3>
+                  
+                  <div className="space-y-3 mt-4 mb-6">
+                    <div className="flex items-center gap-3 text-sm text-slate-400">
+                      <Calendar size={16} className="text-slate-500"/>
+                      {new Date(event.date).toLocaleDateString()}
+                    </div>
+                    <div className="flex items-center gap-3 text-sm text-slate-400">
+                      <MapPin size={16} className="text-slate-500"/>
+                      {event.venue.name}
+                    </div>
+                  </div>
 
-        </div>
+                  <Link 
+                    href={`/event/${event.id}`} 
+                    className="block w-full py-3 rounded-xl bg-slate-800 text-center font-medium text-white hover:bg-violet-600 transition-all duration-300 flex items-center justify-center gap-2 group-hover:gap-3"
+                  >
+                    Get Tickets <ArrowRight size={16} />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );
