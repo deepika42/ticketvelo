@@ -21,12 +21,12 @@ public class BookingController {
     }
 
     @PostMapping
-    public Ticket bookTicket(@RequestBody BookingRequest request) {
-        return bookingService.bookTicket(request.eventId(), request.seatId(), request.userId());
+    public List<Ticket> bookTickets(@RequestBody BookingRequest request) {
+        return bookingService.bookTickets(request.eventId(), request.seatIds(), request.userId());
     }
 
     // DTO: Simple container for the JSON data
-    public record BookingRequest(Long eventId, Long seatId, Long userId) {}
+    public record BookingRequest(Long eventId, List<Long> seatIds, Long userId) {}
 
     @GetMapping("/event/{eventId}")
     public List<Ticket> getTicketsForEvent(@PathVariable Long eventId) {

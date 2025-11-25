@@ -10,8 +10,11 @@ import com.deepika.ticketvelo.modules.catalog.repository.SeatRepository;
 import com.deepika.ticketvelo.modules.catalog.repository.VenueRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Component
 public class DataSeeder implements CommandLineRunner {
@@ -21,7 +24,8 @@ public class DataSeeder implements CommandLineRunner {
     private final SeatRepository seatRepository;
     private final TicketRepository ticketRepository;
 
-    public DataSeeder(VenueRepository venueRepository, EventRepository eventRepository, SeatRepository seatRepository, TicketRepository ticketRepository) {
+    public DataSeeder(VenueRepository venueRepository, EventRepository eventRepository,
+                      SeatRepository seatRepository, TicketRepository ticketRepository) {
         this.venueRepository = venueRepository;
         this.eventRepository = eventRepository;
         this.seatRepository = seatRepository;
@@ -30,44 +34,77 @@ public class DataSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        // 1. Check if data already exists so we don't duplicate it every time we restart
-        if (venueRepository.count() > 0) {
-            System.out.println("Data already exists. Skipping.");
-            return;
-        }
+        if (venueRepository.count() > 0) return;
 
-        // 2. Create a Venue
+        System.out.println("Seeding Realistic Venues (Batch Mode)...");
+        long startTime = System.currentTimeMillis();
+
+        // Use Case 1: Large Concert Arena (2,500 Seats)
+        createVenueWithBatching("The Mega Dome", "Los Angeles", "Beyoncé Renaissance Tour", 50, 50);
+
+        // Use Case 2: Mid-Sized Theater (500 Seats)
+        createVenueWithBatching("Broadway Theater", "New York", "Hamilton", 20, 25);
+
+        long endTime = System.currentTimeMillis();
+        System.out.println("Database Seeded in " + (endTime - startTime) + "ms.");
+    }
+
+    @Transactional
+    public void createVenueWithBatching(String venueName, String address, String eventTitle, int rows, int seatsPerRow) {
+        // 1. Create Venue
         Venue venue = new Venue();
-        venue.setName("Madison Square Garden");
-        venue.setAddress("New York, NY");
-        venue.setCapacity(100);
+        venue.setName(venueName);
+        venue.setAddress(address);
+        venue.setCapacity(rows * seatsPerRow);
         venueRepository.save(venue);
 
-        // 3. Create an Event
+        // 2. Create Event
         Event event = new Event();
-        event.setTitle("Java Concurrency Masterclass");
+        event.setTitle(eventTitle);
         event.setDate(LocalDateTime.now().plusDays(30));
         event.setVenue(venue);
         eventRepository.save(event);
 
-        // 4. Generate 100 Seats (10 Rows x 10 Seats)
-        // 3. Create Seats AND Tickets
-        for (int i = 1; i <= 10; i++) {
-            for (int j = 1; j <= 10; j++) {
-                // Create Seat
-                Seat seat = new Seat("Row-" + i, j, "General", venue);
-                seatRepository.save(seat);
+        // 3. Generate Objects in Memory (The "Batch" List)
+        List<Seat> seatBatch = new ArrayList<>();
+        List<Ticket> ticketBatch = new ArrayList<>();
 
-                // NEW: Create the Ticket immediately as "AVAILABLE"
-                Ticket ticket = new Ticket();
-                ticket.setEvent(event);
-                ticket.setSeat(seat);
-                ticket.setStatus("AVAILABLE");
-                ticket.setUserId(null); // No owner yet
-                ticketRepository.save(ticket);
+        for (int r = 1; r <= rows; r++) {
+            // Generate Row Label: 1->A, 26->Z, 27->AA
+            String rowLabel = generateRowLabel(r);
+
+            for (int s = 1; s <= seatsPerRow; s++) {
+                Seat seat = new Seat(rowLabel, s, "Standard", venue);
+                seatBatch.add(seat);
             }
         }
 
-        System.out.println("Database Seeded: Venue, Event, Seats, and 100 AVAILABLE Tickets.");
+        // 4. BULK SAVE Seats (1 Database Call instead of 2500)
+        List<Seat> savedSeats = seatRepository.saveAll(seatBatch);
+
+        // 5. Link Tickets to the SAVED seats
+        for (Seat seat : savedSeats) {
+            Ticket ticket = new Ticket();
+            ticket.setEvent(event);
+            ticket.setSeat(seat);
+            ticket.setStatus("AVAILABLE");
+            ticketBatch.add(ticket);
+        }
+
+        // 6. BULK SAVE Tickets
+        ticketRepository.saveAll(ticketBatch);
+
+        System.out.println("   -> Created " + venueName + " with " + (rows * seatsPerRow) + " seats.");
+    }
+
+    // Helper to turn 1->A, 27->AA
+    private String generateRowLabel(int n) {
+        StringBuilder result = new StringBuilder();
+        while (n > 0) {
+            n--;
+            result.insert(0, (char) ('A' + (n % 26)));
+            n /= 26;
+        }
+        return result.toString();
     }
 }

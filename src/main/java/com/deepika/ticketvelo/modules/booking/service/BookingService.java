@@ -8,6 +8,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -23,27 +26,60 @@ public class BookingService {
         this.kafkaTemplate = kafkaTemplate;
     }
 
-    public Ticket bookTicket(Long eventId, Long seatId, Long userId) {
-        // 1. Define the Lock Key
-        String lockKey = "lock:event:" + eventId + ":seat:" + seatId;
-
-        // 2. The "Atomic" Lock (SETNX)
-        // "Set this key to 'LOCKED' ONLY IF it does not exist yet. Expire in 2 seconds."
-        Boolean lockAcquired = redisTemplate.opsForValue()
-                .setIfAbsent(lockKey, "LOCKED", Duration.ofSeconds(2));
-
-        if (Boolean.FALSE.equals(lockAcquired)) {
-            // If false, it means someone else holds the lock
-            throw new RuntimeException("⚠️ Server is busy: Seat is being processed by another user.");
-        }
+    public List<Ticket> bookTickets(Long eventId, List<Long> seatIds, Long userId) {
+        Collections.sort(seatIds);
+        List<String> acquiredLocks = new ArrayList<>();
 
         try {
-            // 3. We have the lock! Process the booking safely.
-            return processBooking(eventId, seatId, userId);
+            // 1. Try to Lock ALL seats first
+            for (Long seatId : seatIds) {
+                String lockKey = "lock:event:" + eventId + ":seat:" + seatId;
+
+                Boolean lockAcquired = redisTemplate.opsForValue()
+                        .setIfAbsent(lockKey, "LOCKED", Duration.ofSeconds(5)); // 5s lock
+
+                if (Boolean.FALSE.equals(lockAcquired)) {
+                    throw new RuntimeException("Seat " + seatId + " is currently selected by another user.");
+                }
+                acquiredLocks.add(lockKey);
+            }
+
+            // 2. All locks acquired! Proceed to DB transaction
+            return processBookingBatch(eventId, seatIds, userId);
+
         } finally {
-            // 4. Release the lock so others can try later
-            redisTemplate.delete(lockKey);
+            // 3. Always cleanup locks
+            for (String key : acquiredLocks) {
+                redisTemplate.delete(key);
+            }
         }
+    }
+
+    @Transactional
+    protected List<Ticket> processBookingBatch(Long eventId, List<Long> seatIds, Long userId) {
+        List<Ticket> bookedTickets = new ArrayList<>();
+
+        for (Long seatId : seatIds) {
+            // Reuse your existing logic logic per seat
+            Optional<Ticket> ticketOptional = ticketRepository.findByEventIdAndSeatId(eventId, seatId);
+
+            if (ticketOptional.isEmpty()) throw new RuntimeException("Ticket not found: " + seatId);
+
+            Ticket ticket = ticketOptional.get();
+            if (!"AVAILABLE".equals(ticket.getStatus())) {
+                throw new RuntimeException("One of the seats is already taken!");
+            }
+
+            ticket.setStatus("BOOKED");
+            ticket.setUserId(userId);
+            bookedTickets.add(ticketRepository.save(ticket));
+
+            // Send Kafka Event (Simulated)
+            String message = "Ticket Confirmed: " + ticket.getId() + " for User " + userId;
+            kafkaTemplate.send("ticket-updates", message);
+        }
+
+        return bookedTickets;
     }
 
     @Transactional
@@ -69,7 +105,7 @@ public class BookingService {
         // Message Format: "TicketID:UserEmail"
         String message = "Ticket Confirmed: " + savedTicket.getId() + " for User " + userId;
         kafkaTemplate.send("ticket-updates", message);
-        System.out.println("📨 Event published to Kafka: " + message);
+        System.out.println("Event published to Kafka: " + message);
 
         return savedTicket;
     }

@@ -6,6 +6,8 @@ import com.deepika.ticketvelo.modules.catalog.repository.EventRepository;
 import com.deepika.ticketvelo.modules.catalog.repository.VenueRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.util.List;
 
@@ -35,5 +37,11 @@ public class CatalogController {
     @GetMapping("/events")
     public List<Event> getAllEvents() {
         return eventRepository.findAll();
+    }
+
+    @GetMapping("/events/{id}")
+    public Event getEventById(@PathVariable Long id) {
+        return eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found"));
     }
 }
