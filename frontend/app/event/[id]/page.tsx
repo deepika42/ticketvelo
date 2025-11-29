@@ -19,10 +19,49 @@ export default function EventBookingPage() {
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([]);
   const [bookingStatus, setBookingStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
-  const [userId, setUserId] = useState<number>(0);
+  
+  // AUTH STATE
+  const [token, setToken] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string>('...');
 
-  useEffect(() => { setUserId(Math.floor(Math.random() * 10000)); }, []);
+  // 1. AUTO-LOGIN ON LOAD (The Security Handshake)
+  useEffect(() => {
+    const initializeSession = async () => {
+        // A. Check if we already have a passport in the browser
+        const storedToken = localStorage.getItem('ticketvelo_token');
+        const storedUserId = localStorage.getItem('ticketvelo_userid');
 
+        if (storedToken && storedUserId) {
+            setToken(storedToken);
+            setUserId(storedUserId);
+            console.log("🔐 Restored Session for User:", storedUserId);
+            return; // Stop here, don't create a new user!
+        }
+
+        // B. No passport found? Go get a new one.
+        try {
+            const res = await fetch('http://localhost:8080/api/auth/login-as-guest', { method: 'POST' });
+            const data = await res.json();
+            
+            // Save to State
+            setToken(data.token);
+            setUserId(data.userId);
+            
+            // Save to Browser Storage (So it survives refresh)
+            localStorage.setItem('ticketvelo_token', data.token);
+            localStorage.setItem('ticketvelo_userid', data.userId);
+            
+            console.log("🆕 New Guest Session Created:", data.userId);
+        } catch (err) {
+            console.error("Login failed", err);
+            setErrorMessage("Authentication failed. Please refresh.");
+        }
+    };
+
+    initializeSession();
+  }, []);
+
+  // 2. LOAD EVENT DATA
   useEffect(() => {
     const loadData = async () => {
         try {
@@ -57,30 +96,53 @@ export default function EventBookingPage() {
     }
   };
 
+  // 3. SECURE BOOKING (Sending the Header)
   const handleBook = async () => {
-    if (selectedSeatIds.length === 0) return;
+    if (selectedSeatIds.length === 0 || !token) return;
     setBookingStatus('loading');
     
     try {
       const response = await fetch('http://localhost:8080/api/bookings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           eventId: eventId,
-          seatIds: selectedSeatIds,
-          userId: userId
+          seatIds: selectedSeatIds
         }),
       });
 
-      if (!response.ok) throw new Error('Booking Failed');
+      // --- SELF-HEALING LOGIC START ---
+      if (response.status === 403 || response.status === 401) {
+          console.warn("⚠️ Session expired or invalid. Logging out...");
+          // 1. Wipe the bad credentials
+          localStorage.removeItem('ticketvelo_token');
+          localStorage.removeItem('ticketvelo_userid');
+          // 2. Force a reload to get a fresh Guest ID
+          window.location.reload();
+          return;
+      }
+      // --- SELF-HEALING LOGIC END ---
+
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Booking Failed');
+        } else {
+            throw new Error(`Server Error: ${response.status}`);
+        }
+      }
 
       setBookingStatus('success');
       const ticketRes = await fetch(`http://localhost:8080/api/bookings/event/${eventId}`);
       if (ticketRes.ok) setTickets(await ticketRes.json());
       setSelectedSeatIds([]);
-    } catch (err) {
+    } catch (err: any) {
       setBookingStatus('error');
-      setErrorMessage('One of these seats was just taken!');
+      setErrorMessage(err.message || 'One of these seats was just taken!');
     }
   };
 
@@ -107,12 +169,12 @@ export default function EventBookingPage() {
           {/* Action Bar */}
           <div className="flex items-center gap-4">
              <div className="text-right hidden sm:block">
-                <div className="text-xs text-slate-400">Total</div>
+                <div className="text-xs text-slate-500">Guest ID: {userId}</div>
                 <div className="font-bold text-violet-400">${selectedSeatIds.length * 50}</div>
              </div>
              <button
                 onClick={handleBook}
-                disabled={selectedSeatIds.length === 0 || bookingStatus === 'loading'}
+                disabled={selectedSeatIds.length === 0 || bookingStatus === 'loading' || !token}
                 className={`
                     px-6 py-2 rounded-full font-bold text-sm transition-all
                     ${selectedSeatIds.length === 0 
@@ -142,20 +204,17 @@ export default function EventBookingPage() {
           {/* SCROLLABLE SEAT MAP CONTAINER */}
           <div className="flex-1 relative border border-slate-800 rounded-3xl bg-slate-900/50 overflow-hidden shadow-inner">
             
-            {/* The Stage Indicator */}
             <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-violet-900/20 to-transparent z-10 pointer-events-none flex justify-center pt-4">
                 <span className="text-violet-500/50 text-[10px] tracking-[0.5em] uppercase font-bold">Stage</span>
             </div>
 
-            {/* The Scrollable Area */}
             <div className="absolute inset-0 overflow-auto p-12 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                <div className="min-w-max mx-auto"> {/* min-w-max forces the width to fit the content */}
+                <div className="min-w-max mx-auto"> 
                     
                     {/* Seat Grid */}
                     <div className="flex flex-col gap-2 items-center">
                         {Object.entries(getRows()).sort().map(([rowLabel, rowTickets]) => (
                             <div key={rowLabel} className="flex items-center gap-3">
-                                {/* Sticky Row Label */}
                                 <div className="w-6 text-xs text-slate-500 font-mono text-right sticky left-0">{rowLabel}</div>
                                 
                                 <div className="flex gap-1.5">
@@ -184,7 +243,6 @@ export default function EventBookingPage() {
                                     })}
                                 </div>
                                 
-                                {/* Right Side Row Label */}
                                 <div className="w-6 text-xs text-slate-500 font-mono text-left">{rowLabel}</div>
                             </div>
                         ))}
