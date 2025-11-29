@@ -6,6 +6,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.kafka.core.KafkaTemplate;
+import com.deepika.ticketvelo.common.exception.SeatBookedException;
+import com.deepika.ticketvelo.common.exception.ResourceNotFoundException;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -27,19 +29,20 @@ public class BookingService {
     }
 
     public List<Ticket> bookTickets(Long eventId, List<Long> seatIds, Long userId) {
-        Collections.sort(seatIds);
+        List<Long> sortedSeatIds = new ArrayList<>(seatIds);
+        Collections.sort(sortedSeatIds);
         List<String> acquiredLocks = new ArrayList<>();
 
         try {
             // 1. Try to Lock ALL seats first
-            for (Long seatId : seatIds) {
+            for (Long seatId : sortedSeatIds) {
                 String lockKey = "lock:event:" + eventId + ":seat:" + seatId;
 
                 Boolean lockAcquired = redisTemplate.opsForValue()
                         .setIfAbsent(lockKey, "LOCKED", Duration.ofSeconds(5)); // 5s lock
 
                 if (Boolean.FALSE.equals(lockAcquired)) {
-                    throw new RuntimeException("Seat " + seatId + " is currently selected by another user.");
+                    throw new SeatBookedException("Seat " + seatId + " is currently selected by another user.");
                 }
                 acquiredLocks.add(lockKey);
             }
@@ -60,14 +63,13 @@ public class BookingService {
         List<Ticket> bookedTickets = new ArrayList<>();
 
         for (Long seatId : seatIds) {
-            // Reuse your existing logic logic per seat
             Optional<Ticket> ticketOptional = ticketRepository.findByEventIdAndSeatId(eventId, seatId);
 
-            if (ticketOptional.isEmpty()) throw new RuntimeException("Ticket not found: " + seatId);
+            if (ticketOptional.isEmpty()) throw new ResourceNotFoundException("Ticket not found: " + seatId);
 
             Ticket ticket = ticketOptional.get();
             if (!"AVAILABLE".equals(ticket.getStatus())) {
-                throw new RuntimeException("One of the seats is already taken!");
+                throw new SeatBookedException("One of the seats is already taken!");
             }
 
             ticket.setStatus("BOOKED");

@@ -44,5 +44,27 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
+  # 4. Prometheus (The Database for Metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ticketvelo-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml # Mount our config
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Allow access to localhost app
+
+  # 5. Grafana (The Dashboard)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ticketvelo-grafana
+    ports:
+      - "3001:3000" # We use port 3001 to avoid conflict
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:

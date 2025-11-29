@@ -5,6 +5,7 @@ import com.deepika.ticketvelo.modules.booking.repository.TicketRepository;
 import com.deepika.ticketvelo.modules.booking.service.BookingService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 import java.util.List;
 
@@ -21,12 +22,12 @@ public class BookingController {
     }
 
     @PostMapping
-    public List<Ticket> bookTickets(@RequestBody BookingRequest request) {
-        return bookingService.bookTickets(request.eventId(), request.seatIds(), request.userId());
+    public List<Ticket> bookTickets(@RequestBody BookingRequest request, @AuthenticationPrincipal Long userId) {
+        return bookingService.bookTickets(request.eventId(), request.seatIds(), userId );
     }
 
     // DTO: Simple container for the JSON data
-    public record BookingRequest(Long eventId, List<Long> seatIds, Long userId) {}
+    public record BookingRequest(Long eventId, List<Long> seatIds) {}
 
     @GetMapping("/event/{eventId}")
     public List<Ticket> getTicketsForEvent(@PathVariable Long eventId) {
